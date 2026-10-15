@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>US Weather 2025 Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-end; }
+  h1 { margin: 0; font-size: 22px; }
+  .sub { color: var(--ink2); margin: 4px 0 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 16px; }
+  .chip, .btn { border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+                border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit;
+                display: inline-flex; align-items: center; gap: 8px; }
+  .chip[aria-pressed="false"] { color: var(--muted); }
+  .chip[aria-pressed="false"] .dot { background: transparent !important; box-shadow: inset 0 0 0 2px var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .btn { border-radius: 8px; }
+  .spacer { flex: 1; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .tile .label { color: var(--ink2); font-size: 12px; }
+  .tile .value { font-size: 30px; font-weight: 600; margin: 2px 0; }
+  .tile .note { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 16px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { margin: 0 0 2px; font-size: 15px; }
+  .card p { margin: 0 0 12px; color: var(--ink2); font-size: 13px; }
+  .chart { position: relative; height: 320px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink2); font-weight: 600; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>US Weather 2025</h1>
+      <p class="sub">Daily temperature and precipitation for four US cities, from Open-Meteo reanalysis data.</p>
+    </div>
+    <button class="btn" id="viewToggle" type="button">View as table</button>
+  </header>
+
+  <div class="controls" id="filters" role="group" aria-label="Cities"></div>
+
+  <section class="tiles" id="tiles" aria-label="Key figures"></section>
+
+  <div id="chartsView" class="grid">
+    <div class="card wide">
+      <h2>Average temperature, 7-day rolling</h2>
+      <p>Seasonal swing differs sharply: Chicago and New York range widely, Los Angeles stays mild.</p>
+      <div class="chart"><canvas id="tempChart" role="img" aria-label="Line chart of 7-day rolling average temperature by city"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Monthly precipitation (mm)</h2>
+      <p>Total rainfall and melted snow per month.</p>
+      <div class="chart"><canvas id="precipChart" role="img" aria-label="Grouped bar chart of monthly precipitation by city"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Hot days (max at or above 30 °C)</h2>
+      <p>Count of days over the year.</p>
+      <div class="chart"><canvas id="hotChart" role="img" aria-label="Bar chart of hot days by city"></canvas></div>
+    </div>
+  </div>
+
+  <div id="tableView" class="card" hidden>
+    <h2>City summary</h2>
+    <div class="tablewrap"><table id="summaryTable"></table></div>
+    <h2 style="margin-top:20px">Monthly precipitation (mm)</h2>
+    <div class="tablewrap"><table id="precipTable"></table></div>
+  </div>
+
+  <footer>Data: Open-Meteo historical archive (ERA5 reanalysis, gridded estimates, not station readings), 2025. Source code and pipeline on GitHub.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script>
+(function () {
+  var D = window.DATA;
+  var SLOTS = ["--s1", "--s2", "--s3", "--s4"];
+  var active = {};
+  D.cities.forEach(function (c) { active[c] = true; });
+  var charts = {};
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function colorOf(city) { return css(SLOTS[D.cities.indexOf(city)]); }   // color follows the city, not its rank
+  function visible() { return D.cities.filter(function (c) { return active[c]; }); }
+
+  function buildFilters() {
+    var box = document.getElementById("filters");
+    D.cities.forEach(function (c) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", "true");
+      b.innerHTML = '<span class="dot"></span>' + c;
+      b.querySelector(".dot").style.background = "var(" + SLOTS[D.cities.indexOf(c)] + ")";
+      b.addEventListener("click", function () {
+        if (active[c] && visible().length === 1) return;   // keep at least one city
+        active[c] = !active[c];
+        b.setAttribute("aria-pressed", String(active[c]));
+        render();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function buildTiles() {
+    var cs = visible(), S = D.summary;
+    function best(key, dir) {
+      return cs.reduce(function (a, c) { return (dir * (S[c][key] - S[a][key]) > 0) ? c : a; }, cs[0]);
+    }
+    var hot = best("hottest_c", 1), cold = best("coldest_c", -1), wet = best("total_precip_mm", 1), hotDays = best("hot_days", 1);
+    var tiles = [
+      ["Hottest day", S[hot].hottest_c + " °C", hot + ", " + S[hot].hottest_date],
+      ["Coldest day", S[cold].coldest_c + " °C", cold + ", " + S[cold].coldest_date],
+      ["Wettest city", S[wet].total_precip_mm + " mm", wet + ", " + S[wet].rainy_days + " rainy days"],
+      ["Most hot days", S[hotDays].hot_days, hotDays + ", max at or above " + D.hot_day_c + " °C"]
+    ];
+    document.getElementById("tiles").innerHTML = tiles.map(function (t) {
+      return '<div class="tile"><div class="label">' + t[0] + '</div><div class="value">' + t[1] +
+             '</div><div class="note">' + t[2] + '</div></div>';
+    }).join("");
+  }
+
+  function baseOptions() {
+    var muted = css("--muted"), grid = css("--grid");
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "bottom", labels: { color: css("--ink2"), usePointStyle: true, boxWidth: 8, boxHeight: 8, padding: 18 } },
+        tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink2"),
+                   borderColor: css("--axis"), borderWidth: 1, padding: 10 }
+      },
+      scales: {
+        x: { ticks: { color: muted }, grid: { display: false }, border: { color: css("--axis") } },
+        y: { ticks: { color: muted }, grid: { color: grid }, border: { display: false }, beginAtZero: false }
+      }
+    };
+  }
+
+  function make(id, config) {
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(document.getElementById(id), config);
+  }
+
+  function renderCharts() {
+    var cs = visible(), dates = D.daily[D.cities[0]].dates;
+
+    var o1 = baseOptions();
+    o1.scales.x.ticks.maxTicksLimit = 12;
+    o1.scales.x.ticks.callback = function (v) { return new Date(dates[v] + "T00:00").toLocaleString("en", { month: "short" }); };
+    o1.scales.y.title = { display: true, text: "°C", color: css("--muted") };
+    o1.plugins.tooltip.callbacks = { title: function (items) { return items[0].label; },
+                                     label: function (c) { return " " + c.dataset.label + ": " + c.parsed.y + " °C"; } };
+    make("tempChart", { type: "line", data: { labels: dates, datasets: cs.map(function (c) {
+      return { label: c, data: D.daily[c].temp7, borderColor: colorOf(c), backgroundColor: colorOf(c),
+               borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 };
+    }) }, options: o1 });
+
+    var o2 = baseOptions();
+    o2.scales.y.beginAtZero = true;
+    o2.scales.y.title = { display: true, text: "mm", color: css("--muted") };
+    o2.plugins.tooltip.callbacks = { label: function (c) { return " " + c.dataset.label + ": " + c.parsed.y + " mm"; } };
+    make("precipChart", { type: "bar", data: { labels: D.months, datasets: cs.map(function (c) {
+      return { label: c, data: D.monthly_precip[c], backgroundColor: colorOf(c), borderRadius: 3,
+               borderSkipped: "bottom", maxBarThickness: 14 };
+    }) }, options: o2 });
+
+    var o3 = baseOptions();
+    o3.scales.y.beginAtZero = true;
+    o3.scales.y.title = { display: true, text: "days", color: css("--muted") };
+    o3.plugins.legend.display = false;
+    o3.interaction = { mode: "nearest", intersect: true };
+    o3.plugins.tooltip.callbacks = { label: function (c) { return " " + c.parsed.y + " days"; } };
+    make("hotChart", { type: "bar", data: { labels: cs, datasets: [{
+      data: cs.map(function (c) { return D.summary[c].hot_days; }),
+      backgroundColor: cs.map(colorOf), borderRadius: 4, borderSkipped: "bottom", maxBarThickness: 56
+    }] }, options: o3 });
+  }
+
+  function renderTables() {
+    var cs = visible(), S = D.summary;
+    var cols = [["Avg temp (°C)", "avg_temp"], ["Hottest (°C)", "hottest_c"], ["Coldest (°C)", "coldest_c"],
+                ["Precip (mm)", "total_precip_mm"], ["Rainy days", "rainy_days"], ["Hot days", "hot_days"],
+                ["Peak wind (km/h)", "max_wind_kmh"]];
+    document.getElementById("summaryTable").innerHTML =
+      "<tr><th>City</th>" + cols.map(function (c) { return "<th>" + c[0] + "</th>"; }).join("") + "</tr>" +
+      cs.map(function (city) {
+        return "<tr><td>" + city + "</td>" + cols.map(function (c) { return "<td>" + S[city][c[1]] + "</td>"; }).join("") + "</tr>";
+      }).join("");
+    document.getElementById("precipTable").innerHTML =
+      "<tr><th>City</th>" + D.months.map(function (m) { return "<th>" + m + "</th>"; }).join("") + "</tr>" +
+      cs.map(function (city) {
+        return "<tr><td>" + city + "</td>" + D.monthly_precip[city].map(function (v) { return "<td>" + v + "</td>"; }).join("") + "</tr>";
+      }).join("");
+  }
+
+  function render() { buildTiles(); renderCharts(); renderTables(); }
+
+  var showTable = false;
+  document.getElementById("viewToggle").addEventListener("click", function () {
+    showTable = !showTable;
+    document.getElementById("chartsView").hidden = showTable;
+    document.getElementById("tableView").hidden = !showTable;
+    this.textContent = showTable ? "View as charts" : "View as table";
+    if (!showTable) renderCharts();
+  });
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { render(); });
+  buildFilters();
+  render();
+})();
+</script>
+</body>
+</html>
